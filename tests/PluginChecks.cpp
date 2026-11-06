@@ -3,6 +3,9 @@
 #include <stdexcept>
 #include <memory>
 #include <cmath>
+#include "../Source/ChimeyGuitarEngine.h"
+#include "../Source/ChimeyGuitar2Engine.h"
+#include "../Source/ChimeyDeluxeEngine.h"
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter();
 static void require(bool condition,const char* message) { if(!condition) throw std::runtime_error(message); }
 static juce::RangedAudioParameter& param(juce::AudioProcessor& p,const juce::String& id) {
@@ -15,6 +18,27 @@ static juce::Component* find(juce::Component& c,const juce::String& id) {
     for(auto* child:c.getChildren()) if(auto* result=find(*child,id)) return result;
     return nullptr;
 }
+template<class Engine, class T> void compare(juce::AudioProcessor& p,int model,const juce::String& name) {
+    set(p,"model",static_cast<float>(model)*.5f); set(p,"original",0.f);
+    p.setProcessingPrecision(std::is_same_v<T,float>?juce::AudioProcessor::singlePrecision:juce::AudioProcessor::doublePrecision);
+    p.setPlayConfigDetails(2,2,48000,257); p.prepareToPlay(48000,257);
+    Engine e; e.reset(48000);
+    for(int i=0;i<10;++i) { const float v=static_cast<float>((i*3+4)%11)*.1f; set(p,name+"_"+juce::String(i),v); e.setParameter(i,v); }
+    juce::MidiBuffer midi;
+    for(int block=0;block<8;++block) {
+        juce::AudioBuffer<T> b(2,257),expected(2,257);
+        for(int c=0;c<2;++c) for(int i=0;i<257;++i) {
+            const auto v=static_cast<T>(.3*std::sin((block*257+i)*.031*(c+1)));
+            b.setSample(c,i,v); expected.setSample(c,i,v);
+        }
+        p.processBlock(b,midi);
+        T* data[]{expected.getWritePointer(0),expected.getWritePointer(1)};
+        if constexpr(std::is_same_v<T,float>) e.processReplacing(data,data,257);
+        else e.processDoubleReplacing(data,data,257);
+        for(int c=0;c<2;++c) for(int i=0;i<257;++i) require(b.getSample(c,i)==expected.getSample(c,i),"Wrapper altered upstream output");
+    }
+    require(p.getLatencySamples()==0,"Unexpected latency"); p.releaseResources();
+}
 int main(int argc,char** argv) {
     juce::ScopedJuceInitialiser_GUI init;
     try {
@@ -23,6 +47,13 @@ int main(int argc,char** argv) {
         require(p->getParameters().size()==32,"Unexpected parameters (no level matching)");
         require(param(*p,"model").getValue()==.5f,"ChimeyGuitar2 is not default");
         require(std::abs(param(*p,"ChimeyGuitar2_0").getValue()-.6f)<1.e-6f,"Upstream default");
+        compare<ChimeyGuitarEngine,float>(*p,0,"ChimeyGuitar");
+        compare<ChimeyGuitar2Engine,float>(*p,1,"ChimeyGuitar2");
+        compare<ChimeyDeluxeEngine,float>(*p,2,"ChimeyDeluxe");
+        compare<ChimeyGuitarEngine,double>(*p,0,"ChimeyGuitar");
+        compare<ChimeyGuitar2Engine,double>(*p,1,"ChimeyGuitar2");
+        compare<ChimeyDeluxeEngine,double>(*p,2,"ChimeyDeluxe");
+        p->setProcessingPrecision(juce::AudioProcessor::singlePrecision);
         p->setPlayConfigDetails(2,2,48000,512); p->prepareToPlay(48000,512);
         juce::MidiBuffer midi;
         for(float model:{0.f,.5f,1.f}) {

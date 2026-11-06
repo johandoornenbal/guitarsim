@@ -24,8 +24,8 @@ set(JUCE_PATH "" CACHE PATH "Optional existing JUCE 8.0.12 checkout")
 if(JUCE_PATH)
   add_subdirectory("${JUCE_PATH}" "${CMAKE_BINARY_DIR}/JUCE")
 else()
-  FetchContent_Declare(JUCE GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG 29396c22c93392d6738e021b83196283d6e4d850 GIT_SHALLOW FALSE)
+  FetchContent_Declare(JUCE
+    URL https://codeload.github.com/juce-framework/JUCE/tar.gz/29396c22c93392d6738e021b83196283d6e4d850)
   FetchContent_MakeAvailable(JUCE)
 endif()
 juce_add_plugin(GuitarSim
