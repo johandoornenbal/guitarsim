@@ -231,10 +231,10 @@ private:
         for(int i=0;i<40;++i) {
             const auto threshold=-60.f+static_cast<float>(i)*1.65f;
             const auto colour=threshold>=0?juce::Colour(0xffdf715b):threshold>=-9?style::gold:juce::Colour(0xffb8c99a);
-            g.setColour(colour.withAlpha(db>=threshold?1.f:.12f)); g.fillRoundedRectangle(static_cast<float>(x+24+i*7),static_cast<float>(y+2),5,16,1);
+            g.setColour(colour.withAlpha(db>-60.f && db>=threshold?1.f:.12f)); g.fillRoundedRectangle(static_cast<float>(x+24+i*7),static_cast<float>(y+2),5,16,1);
         }
         g.setColour(db>=0?juce::Colour(0xffdf715b):style::cream);
-        g.drawText(db<=-60?"−∞":juce::String(db,1),x+310,y,70,20,juce::Justification::right);
+        g.drawText(db<=-60?"-inf":juce::String(db,1),x+310,y,70,20,juce::Justification::right);
     }
     void bindModel(int model) {
         if(model==shownModel) return;
@@ -243,7 +243,7 @@ private:
         for(int i=0;i<10;++i) {
             auto& knob=knobs[static_cast<size_t>(i)];
             knob.setName(controls::name(model,i)); knob.setComponentID(controls::id(model,i));
-            knob.setTooltip(juce::String(controls::models[model])+" / "+controls::name(model,i)+". Original normalized range 0–1. Double-click to reset.");
+            knob.setTooltip(juce::String(controls::models[model])+" / "+controls::name(model,i)+". Original normalized range 0-1. Double-click to reset.");
             attachments[static_cast<size_t>(i)]=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,controls::id(model,i),knob);
             knob.setDoubleClickReturnValue(true,controls::defaults[model][i]);
         }

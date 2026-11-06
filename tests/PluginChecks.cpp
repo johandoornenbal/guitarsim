@@ -6,6 +6,7 @@
 #include "../Source/ChimeyGuitarEngine.h"
 #include "../Source/ChimeyGuitar2Engine.h"
 #include "../Source/ChimeyDeluxeEngine.h"
+#include "../Source/Controls.h"
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter();
 static void require(bool condition,const char* message) { if(!condition) throw std::runtime_error(message); }
 static juce::RangedAudioParameter& param(juce::AudioProcessor& p,const juce::String& id) {
@@ -94,9 +95,13 @@ int main(int argc,char** argv) {
             selector->setSelectedId(model+1,juce::sendNotificationSync);
             require(find(*editor,names[model]+"_0"),"Control bank not rebound");
             if(argc>1) {
+                std::array<float,10> saved{};
+                for(int i=0;i<10;++i) { saved[static_cast<size_t>(i)]=param(*restored,controls::id(model,i)).getValue(); set(*restored,controls::id(model,i),controls::defaults[static_cast<size_t>(model)][static_cast<size_t>(i)]); }
                 auto image=editor->createComponentSnapshot(editor->getLocalBounds(),true);
                 auto stream=output.getChildFile("ui-"+names[model]+".png").createOutputStream(); require(stream!=nullptr,"Screenshot output");
+                stream->setPosition(0); stream->truncate();
                 juce::PNGImageFormat png; require(png.writeImageToStream(image,*stream),"Screenshot encoding");
+                for(int i=0;i<10;++i) set(*restored,controls::id(model,i),saved[static_cast<size_t>(i)]);
             }
         }
         auto* reset=dynamic_cast<juce::Button*>(find(*editor,"resetParameters")); require(reset,"Reset button");

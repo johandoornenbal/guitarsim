@@ -1,41 +1,35 @@
-name: Build GuitarSim
-on:
-  push:
-  pull_request:
-  workflow_dispatch:
+name: Build GuitarSim Apple Silicon VST3
+on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Linux dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libx11-dev libxext-dev libxinerama-dev libxrandr-dev libxcursor-dev libfreetype6-dev libfontconfig1-dev libgl1-mesa-dev xvfb
-      - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - name: Check Apple Silicon runner
+        run: test "$(uname -m)" = arm64
+      - name: Configure Apple Silicon (M2 and later)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
       - name: Build
-        run: cmake --build build --config Release --parallel 2
-      - name: Test Linux
-        if: runner.os == 'Linux'
-        run: xvfb-run -a ctest --test-dir build -C Release --output-on-failure
-      - name: Test Windows and macOS
-        if: runner.os != 'Linux'
+        run: cmake --build build --config Release --parallel 3
+      - name: Test DSP, state and editor
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Test signing and installation script
+        run: |
+          GUITARSIM_INSTALL_DIR="$RUNNER_TEMP/guitarsim-test-vst3" bash scripts/build-sign-install-mac.sh --install-only "$PWD/build/GuitarSim_artefacts/Release/VST3/GuitarSim.vst3"
+          codesign --verify --deep --strict "$RUNNER_TEMP/guitarsim-test-vst3/GuitarSim.vst3"
       - name: Render interface previews
-        if: runner.os == 'Linux'
-        run: xvfb-run -a build/plugin_checks "$PWD/build/previews"
+        run: build/plugin_checks "$PWD/build/previews"
+      - name: Sign and archive
+        run: |
+          codesign --force --deep --sign - "build/GuitarSim_artefacts/Release/VST3/GuitarSim.vst3"
+          ditto -c -k --sequesterRsrc --keepParent "build/GuitarSim_artefacts/Release/VST3/GuitarSim.vst3" GuitarSim-macOS-arm64.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: GuitarSim-${{ runner.os }}
-          path: build/GuitarSim_artefacts/Release/VST3/
+          name: GuitarSim-macOS-arm64
+          path: GuitarSim-macOS-arm64.zip
       - uses: actions/upload-artifact@v4
-        if: runner.os == 'Linux'
         with:
           name: GuitarSim-UI-previews
           path: build/previews/*.png

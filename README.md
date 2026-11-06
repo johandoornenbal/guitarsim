@@ -4,6 +4,8 @@ A JUCE VST3 interface for **ChimeyGuitar2**, **ChimeyGuitar**, and **ChimeyDelux
 
 **GuitarSim** is the name shown in your DAW. ChimeyGuitar2 is selected by default. Every algorithm keeps its own ten controls and original Airwindows defaults when you switch models and save your DAW session. There is no LUFS compensation, automatic gain adjustment, or level-learning system.
 
+![GuitarSim — ChimeyGuitar2](docs/ui-ChimeyGuitar2.png)
+
 ## Controls
 
 - **Algorithm:** choose ChimeyGuitar, ChimeyGuitar2, or ChimeyDeluxe. Switching resets the entering engine's audio history to avoid carrying old filter/compressor state into a new audition.
@@ -19,34 +21,48 @@ Mono and stereo channel layouts and float/double processing are supported. Mono 
 
 ## Download and install
 
-Open [Actions → Build GuitarSim](https://github.com/johandoornenbal/guitarsim/actions/workflows/build.yml), select a successful run, and download the artifact for your OS. Extract it and copy the entire **GuitarSim.vst3** bundle to your VST3 directory:
+Open [Actions → Build GuitarSim](https://github.com/johandoornenbal/guitarsim/actions/workflows/build.yml), select a successful run, and download **GuitarSim-macOS-arm64**. Extract the artifact and its inner ZIP, then copy the entire **GuitarSim.vst3** bundle to `~/Library/Audio/Plug-Ins/VST3`. The build targets Apple Silicon, including M2 and later Macs.
 
-| OS | User VST3 location |
-| --- | --- |
-| Windows | `%LOCALAPPDATA%\Programs\Common\VST3` (or the system `C:\Program Files\Common Files\VST3`) |
-| macOS | `~/Library/Audio/Plug-Ins/VST3` |
-| Linux | `~/.vst3` |
+Rescan plugins in your DAW. The macOS build targets Apple Silicon (macOS 11+) and is ad-hoc signed, with a ZIP that preserves bundle permissions; it is not notarized. GitHub requires you to be signed in to download workflow artifacts.
 
-Rescan plugins in your DAW. Builds are unsigned; macOS distribution is not notarized. GitHub requires you to be signed in to download workflow artifacts.
+## Build, sign, and install on your Mac
+
+Install Xcode Command Line Tools (`xcode-select --install`) and CMake 3.22+ (`brew install cmake`), close your DAW, then run from the repository:
+
+```sh
+bash scripts/build-sign-install-mac.sh
+```
+
+This builds and tests the Apple Silicon VST3, ad-hoc signs a staged copy, verifies its signature, and installs it to `~/Library/Audio/Plug-Ins/VST3/GuitarSim.vst3`. An existing installation is replaced only after the new bundle passes signing and verification. Restart or rescan plugins in your DAW.
+
+To sign and install an already downloaded/extracted bundle without compiling:
+
+```sh
+bash scripts/build-sign-install-mac.sh --install-only "/path/to/GuitarSim.vst3"
+```
+
+The script targets arm64 for M2 and later, uses no `sudo`, and follows the `codesign`/`ditto` installation approach from Tape and Wide. Run it in a native Apple Silicon terminal. Optional `GUITARSIM_BUILD_DIR` and `GUITARSIM_INSTALL_DIR` environment variables override the build and installation folders. Additional CMake configure arguments can be passed to the script, for example `-DJUCE_PATH=/absolute/path/to/JUCE`.
+
+This is a **VST3** plugin; Logic Pro requires an Audio Unit and cannot load it.
 
 ## Build
 
 Requires CMake 3.22+, a C++17 compiler, and Git. CMake fetches JUCE 8.0.12 at a pinned commit, or accepts `-DJUCE_PATH=/path/to/JUCE`.
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
 cmake --build build --config Release --parallel 2
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-Linux dependencies:
+For development checks on Linux, omit the macOS configure flags. Linux dependencies:
 
 ```sh
 sudo apt-get install libasound2-dev libx11-dev libxext-dev libxinerama-dev libxrandr-dev libxcursor-dev libfreetype6-dev libfontconfig1-dev libgl1-mesa-dev xvfb
 xvfb-run -a ctest --test-dir build --output-on-failure
 ```
 
-The plugin is written to `build/GuitarSim_artefacts/Release/VST3/GuitarSim.vst3`. CI builds and tests on Windows, macOS, and Linux, and renders the actual JUCE editor for all three algorithms into the `GuitarSim-UI-previews` artifact.
+The plugin is written to `build/GuitarSim_artefacts/Release/VST3/GuitarSim.vst3`. CI builds and tests on macOS Apple Silicon, and renders the actual JUCE editor for all three algorithms into the `GuitarSim-UI-previews` artifact.
 
 For the DSP tests without JUCE or GUI dependencies:
 
