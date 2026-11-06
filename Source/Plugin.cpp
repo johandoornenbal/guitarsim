@@ -264,7 +264,7 @@ public:
         sizeChoice.addItemList({"Small (75%)","Medium (100%)","Large (125%)"},1);
         sizeChoice.setName("Interface size"); sizeChoice.setComponentID("uiSize");
         sizeChoice.setSelectedId(processor.uiSize.load(),juce::dontSendNotification);
-        for(auto* box:{&selector,&sizeChoice}) {
+        for(auto* box:{&selector,&sizeChoice,&roomSelector}) {
             addAndMakeVisible(*box);
             box->setColour(juce::ComboBox::backgroundColourId,style::ink);
             box->setColour(juce::ComboBox::textColourId,style::gold);
