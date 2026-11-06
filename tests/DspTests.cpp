@@ -2,6 +2,8 @@
 #include "ChimeyGuitar2Engine.h"
 #include "ChimeyDeluxeEngine.h"
 #include "Reference.h"
+#include "kWoodRoomEngine.h"
+#include "WoodenBoxEngine.h"
 #include <array>
 #include <vector>
 #include <cmath>
@@ -43,6 +45,6 @@ template<class Engine> void test(void(*ref)(double,const float*,double**,int,int
     std::cout<<name<<": upstream reference, endpoints, rates, block continuity and float silence passed\n";
 }
 int main() {
-    try { test<ChimeyGuitarEngine>(referenceChimeyGuitar,"ChimeyGuitar"); test<ChimeyGuitar2Engine>(referenceChimeyGuitar2,"ChimeyGuitar2"); test<ChimeyDeluxeEngine>(referenceChimeyDeluxe,"ChimeyDeluxe"); }
+    try { test<WoodenBoxEngine>(referenceWoodenBox,"WoodenBox"); test<kWoodRoomEngine>(referencekWoodRoom,"kWoodRoom"); test<ChimeyGuitarEngine>(referenceChimeyGuitar,"ChimeyGuitar"); test<ChimeyGuitar2Engine>(referenceChimeyGuitar2,"ChimeyGuitar2"); test<ChimeyDeluxeEngine>(referenceChimeyDeluxe,"ChimeyDeluxe"); }
     catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
 }

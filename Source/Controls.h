@@ -1,6 +1,12 @@
 #pragma once
 #include <array>
 namespace controls {
+inline constexpr std::array<const char*,3> boxNames{"Select","Reso","Depth"};
+inline constexpr std::array<float,3> boxDefaults{.5f,.5f,.5f};
+inline juce::String boxId(int index) { return "WoodenBox_"+juce::String(index); }
+inline constexpr std::array<const char*,6> roomNames{"Regen","Derez","Filter","EarlyRF","Positin","Dry/Wet"};
+inline constexpr std::array<float,6> roomDefaults{.5f,.5f,.25f,.5f,.75f,.5f};
+inline juce::String roomId(int index) { return "kWoodRoom_"+juce::String(index); }
 inline constexpr std::array<const char*,3> models{"ChimeyGuitar", "ChimeyGuitar2", "ChimeyDeluxe"};
 inline constexpr std::array<const char*,10> guitarNames{"Compression","Presence","High","Mid","Low","Sub","High Speaker","Low Speaker","Speed","Output"};
 inline constexpr std::array<const char*,10> deluxeNames{"Hell","Fizz","Pick","Satan","Danger","Critical","High Meat","Low Meat","Swing","Rarely"};

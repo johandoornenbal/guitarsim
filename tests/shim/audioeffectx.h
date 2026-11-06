@@ -21,3 +21,5 @@ public:
 private: double rate=44100;
 };
 
+
+inline void int2string(int v,char* text,int n) { std::snprintf(text,static_cast<size_t>(n),"%d",v); }

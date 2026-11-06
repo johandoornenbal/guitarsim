@@ -22,3 +22,20 @@ Copyright (c) 2026 Johan Doornenbal. The MIT permission and warranty notice is r
 https://github.com/juce-framework/JUCE/tree/29396c22c93392d6738e021b83196283d6e4d850
 
 JUCE is fetched at build time and is not relicensed by this repository's MIT license. JUCE is available under AGPLv3 or a commercial JUCE license. Distribution must comply with your chosen JUCE license, including source obligations where applicable. See JUCE's LICENSE.md for full terms.
+
+- Airwindows kWoodRoom: Chris Johnson / Airwindows, MIT, from the same upstream
+  commit `7fd5f5cae262a41e6dd7d9a83d60c46e84d3092a`, `plugins/WinVST/kWoodRoom`.
+  All three original files are preserved verbatim in `third_party/airwindows/kWoodRoom`.
+  `scripts/port-engines.py` reproduces its SDK-free port, retaining the original
+  processing, constants, initialization and six parameter defaults, using the same
+  deterministic dither seeds as the guitar ports. Room bypass crossfading is an
+  independent wrapper stage and does not modify either Airwindows algorithm.
+
+- Airwindows WoodenBox: Chris Johnson / Airwindows, MIT, from upstream commit
+  `7fd5f5cae262a41e6dd7d9a83d60c46e84d3092a`, `plugins/WinVST/WoodenBox`.
+  Its three source files are preserved verbatim. The reproducible SDK-free port
+  retains processing, constants and defaults, with the existing deterministic seeds.
+
+Both effect engines run as an independent second stage after the selected guitar
+engine. The bypass fades and original-input comparison are applied by the plugin
+wrapper, outside all Airwindows algorithms.

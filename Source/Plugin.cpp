@@ -3,6 +3,8 @@
 #include "ChimeyGuitar2Engine.h"
 #include "ChimeyDeluxeEngine.h"
 #include "Controls.h"
+#include "kWoodRoomEngine.h"
+#include "WoodenBoxEngine.h"
 #include <atomic>
 
 class GuitarProcessor final : public juce::AudioProcessor {
@@ -10,6 +12,11 @@ public:
     GuitarProcessor() : AudioProcessor(BusesProperties().withInput("Input",juce::AudioChannelSet::stereo(),true)
         .withOutput("Output",juce::AudioChannelSet::stereo(),true)), state(*this,nullptr,"GuitarSimState",layout()) {
         for(int m=0;m<3;++m) for(int i=0;i<10;++i) values[m][i]=state.getRawParameterValue(controls::id(m,i));
+        for(int i=0;i<6;++i) roomValues[i]=state.getRawParameterValue(controls::roomId(i));
+        for(int i=0;i<3;++i) boxValues[i]=state.getRawParameterValue(controls::boxId(i));
+        roomModelValue=state.getRawParameterValue("roomModel");
+        roomEnabledValue=state.getRawParameterValue("roomEnabled");
+        guitarEnabledValue=state.getRawParameterValue("guitarEnabled");
         modelValue=state.getRawParameterValue("model"); originalValue=state.getRawParameterValue("original");
     }
     static juce::AudioProcessorValueTreeState::ParameterLayout layout() {
@@ -24,12 +31,28 @@ public:
         p.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"model",1},"Algorithm",
             juce::StringArray{"ChimeyGuitar","ChimeyGuitar2","ChimeyDeluxe"},1));
         p.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"original",1},"Original input",false));
+        const auto roomAttributes=juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction([](float v,int) { return juce::String(v,3); })
+            .withValueFromStringFunction([](const juce::String& s) { return s.getFloatValue(); });
+        p.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"roomEnabled",1},"Room enabled",false));
+        for(int i=0;i<6;++i) p.add(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{controls::roomId(i),1},"kWoodRoom "+juce::String(controls::roomNames[i]),
+            juce::NormalisableRange<float>(0,1),controls::roomDefaults[i],roomAttributes));
+        p.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"roomModel",1},"Room algorithm",juce::StringArray{"kWoodRoom","WoodenBox"},0));
+        for(int i=0;i<3;++i) p.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{controls::boxId(i),1},
+            "WoodenBox "+juce::String(controls::boxNames[i]),juce::NormalisableRange<float>(0,1),controls::boxDefaults[i],roomAttributes));
+        p.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"guitarEnabled",1},"Guitar enabled",true));
         return p;
     }
     int selectedModel() const { return juce::jlimit(0,2,juce::roundToInt(modelValue->load())); }
+    int selectedRoom() const { return roomModelValue->load()>.5f?1:0; }
     void prepareToPlay(double rate,int blockSize) override {
         scratchSize=juce::jmax(8192,blockSize);
-        floatScratch.setSize(4,scratchSize); doubleScratch.setSize(4,scratchSize);
+        floatScratch.setSize(6,scratchSize); doubleScratch.setSize(6,scratchSize);
+        box.reset(rate); activeRoom=selectedRoom();
+        guitarBlend.reset(rate,.01); guitarBlend.setCurrentAndTargetValue(guitarEnabledValue->load()>.5f?1.:0.);
+        room.reset(rate); roomBlend.reset(rate,.01);
+        roomBlend.setCurrentAndTargetValue(roomEnabledValue->load()>.5f?1.:0.);
         sampleRate=rate; guitar.reset(rate); guitar2.reset(rate); deluxe.reset(rate);
         activeModel=selectedModel(); blend.reset(rate,.01);
         blend.setCurrentAndTargetValue(originalValue->load()>.5f?0.:1.); peaks[0]=0; peaks[1]=0;
@@ -47,6 +70,11 @@ public:
         }();
         auto* left=scratch.getWritePointer(0); auto* right=scratch.getWritePointer(1);
         auto* dryL=scratch.getWritePointer(2); auto* dryR=scratch.getWritePointer(3);
+        auto* roomL=scratch.getWritePointer(4); auto* roomR=scratch.getWritePointer(5);
+        for(int i=0;i<6;++i) room.setParameter(i,roomValues[i]->load());
+        for(int i=0;i<3;++i) box.setParameter(i,boxValues[i]->load());
+        guitarBlend.setTargetValue(guitarEnabledValue->load()>.5f?1.:0.);
+        roomBlend.setTargetValue(roomEnabledValue->load()>.5f?1.:0.);
         blend.setTargetValue(originalValue->load()>.5f?0.:1.);
         for(int offset=0;offset<b.getNumSamples();offset+=scratchSize) {
             const int count=juce::jmin(scratchSize,b.getNumSamples()-offset);
@@ -57,6 +85,31 @@ public:
             if constexpr(std::is_same_v<T,float>) e.processReplacing(data,data,count);
             else e.processDoubleReplacing(data,data,count);
             for(int i=0;i<count;++i) {
+                const auto mix=guitarBlend.getNextValue();
+                if(mix<=0.) { left[i]=dryL[i]; right[i]=dryR[i]; }
+                else if(mix<1.) {
+                    left[i]=static_cast<T>(dryL[i]*(1-mix)+left[i]*mix);
+                    right[i]=static_cast<T>(dryR[i]*(1-mix)+right[i]*mix);
+                }
+            }
+            // Independent post-guitar stage. Keep its history running during bypass;
+            // the crossfade lives outside the unmodified Airwindows processing.
+            std::copy_n(left,count,roomL); std::copy_n(right,count,roomR);
+            T* roomData[]{roomL,roomR};
+            if(activeRoom==0) {
+                if constexpr(std::is_same_v<T,float>) room.processReplacing(roomData,roomData,count);
+                else room.processDoubleReplacing(roomData,roomData,count);
+            } else {
+                if constexpr(std::is_same_v<T,float>) box.processReplacing(roomData,roomData,count);
+                else box.processDoubleReplacing(roomData,roomData,count);
+            }
+            for(int i=0;i<count;++i) {
+                const auto roomMix=roomBlend.getNextValue();
+                if(roomMix>=1.) { left[i]=roomL[i]; right[i]=roomR[i]; }
+                else if(roomMix>0.) {
+                    left[i]=static_cast<T>(left[i]*(1-roomMix)+roomL[i]*roomMix);
+                    right[i]=static_cast<T>(right[i]*(1-roomMix)+roomR[i]*roomMix);
+                }
                 const auto mix=blend.getNextValue();
                 left[i]=static_cast<T>(dryL[i]*(1-mix)+left[i]*mix);
                 right[i]=static_cast<T>(dryR[i]*(1-mix)+right[i]*mix);
@@ -76,6 +129,10 @@ public:
     template<class T> void process(juce::AudioBuffer<T>& b) {
         juce::ScopedNoDenormals guard;
         if(b.getNumChannels()<1) return;
+        if(selectedRoom()!=activeRoom) {
+            activeRoom=selectedRoom();
+            if(activeRoom==0) room.reset(sampleRate); else box.reset(sampleRate);
+        }
         const int model=selectedModel();
         if(model!=activeModel) {
             if(model==0) guitar.reset(sampleRate); else if(model==1) guitar2.reset(sampleRate); else deluxe.reset(sampleRate);
@@ -109,6 +166,24 @@ public:
             auto restored=juce::ValueTree::fromXml(*xml);
             if(!restored.isValid()) return;
             uiSize=juce::jlimit(1,3,static_cast<int>(restored.getProperty("uiSize",2)));
+            // Sessions saved before the room stage retain the original guitar-only sound.
+            for(int i=-1;i<6;++i) {
+                const auto id=i<0?juce::String("roomEnabled"):controls::roomId(i);
+                if(!restored.getChildWithProperty("id",id).isValid()) {
+                    juce::ValueTree parameter{"PARAM"};
+                    parameter.setProperty("id",id,nullptr);
+                    parameter.setProperty("value",i<0?0.f:controls::roomDefaults[i],nullptr);
+                    restored.appendChild(parameter,nullptr);
+                }
+            }
+            for(int i=-2;i<3;++i) {
+                const auto id=i==-2?juce::String("guitarEnabled"):i==-1?juce::String("roomModel"):controls::boxId(i);
+                if(!restored.getChildWithProperty("id",id).isValid()) {
+                    juce::ValueTree parameter{"PARAM"}; parameter.setProperty("id",id,nullptr);
+                    parameter.setProperty("value",i==-2?1.f:i==-1?0.f:controls::boxDefaults[i],nullptr);
+                    restored.appendChild(parameter,nullptr);
+                }
+            }
             state.replaceState(restored);
         }
     }
@@ -116,10 +191,20 @@ public:
     std::atomic<int> uiSize{2};
     std::atomic<float> peaks[2]{};
 private:
+    WoodenBoxEngine box;
+    int activeRoom=0;
+    juce::SmoothedValue<double> guitarBlend{1.};
+    kWoodRoomEngine room;
+    juce::SmoothedValue<double> roomBlend{0.};
     ChimeyGuitarEngine guitar;
     ChimeyGuitar2Engine guitar2;
     ChimeyDeluxeEngine deluxe;
     std::array<std::array<std::atomic<float>*,10>,3> values{};
+    std::array<std::atomic<float>*,6> roomValues{};
+    std::array<std::atomic<float>*,3> boxValues{};
+    std::atomic<float>* roomModelValue=nullptr;
+    std::atomic<float>* roomEnabledValue=nullptr;
+    std::atomic<float>* guitarEnabledValue=nullptr;
     std::atomic<float>* modelValue=nullptr;
     std::atomic<float>* originalValue=nullptr;
     juce::SmoothedValue<double> blend{1.};
@@ -141,6 +226,22 @@ public:
             knob.setRotaryParameters(juce::MathConstants<float>::pi*1.25f,juce::MathConstants<float>::pi*2.75f,true);
             knob.setTextBoxStyle(juce::Slider::TextBoxBelow,false,110,24);
         }
+        for(auto& knob:roomKnobs) {
+            addAndMakeVisible(knob);
+            knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+            knob.setRotaryParameters(juce::MathConstants<float>::pi*1.25f,juce::MathConstants<float>::pi*2.75f,true);
+            knob.setTextBoxStyle(juce::Slider::TextBoxBelow,false,100,24);
+        }
+        roomSelector.setComponentID("roomAlgorithm"); roomSelector.setName("Room algorithm");
+        roomSelector.addItemList({"kWoodRoom","WoodenBox"},1); addAndMakeVisible(roomSelector);
+        roomSelectorAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"roomModel",roomSelector);
+        roomSelector.onChange=[this] { bindRoom(); };
+        guitarEnabled.setComponentID("guitarEnabled"); guitarEnabled.setClickingTogglesState(true);
+        guitarEnabled.setTooltip("Engage the selected guitar algorithm before the room stage. Uses a 10 ms crossfade.");
+        guitarAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"guitarEnabled",guitarEnabled);
+        roomEnabled.setComponentID("roomEnabled"); roomEnabled.setClickingTogglesState(true);
+        roomEnabled.setTooltip("Engage the selected room algorithm after the selected guitar algorithm. Uses a 10 ms crossfade.");
+        roomAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"roomEnabled",roomEnabled);
         selector.setName("Algorithm"); selector.setComponentID("algorithm");
         selector.addItemList({"ChimeyGuitar","ChimeyGuitar2","ChimeyDeluxe"},1);
         selector.setTooltip("Each Airwindows algorithm keeps its own settings. Switching resets the entering algorithm's audio history.");
@@ -160,7 +261,7 @@ public:
             processor.updateHostDisplay(juce::AudioProcessor::ChangeDetails{}.withNonParameterStateChanged(true));
             if(sizeChanged) sizeChanged();
         };
-        for(auto* button:{&reset,&original}) {
+        for(auto* button:{&reset,&original,&roomEnabled,&guitarEnabled}) {
             addAndMakeVisible(*button);
             button->setColour(juce::TextButton::buttonColourId,style::ink);
             button->setColour(juce::TextButton::textColourOffId,style::gold);
@@ -178,13 +279,19 @@ public:
         original.setComponentID("abOriginal"); original.setClickingTogglesState(true);
         original.setTooltip("Compare the unprocessed input with GuitarSim. Uses a 10 ms crossfade.");
         originalAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"original",original);
-        bindModel(processor.selectedModel());
-        setSize(980,740); startTimerHz(30);
+        guitarEnabled.onClick=[this] { refreshStages(); };
+        roomEnabled.onClick=[this] { refreshStages(); };
+        bindModel(processor.selectedModel()); bindRoom(); refreshStages();
+        setSize(1340,740); startTimerHz(30);
     }
     ~GuitarPanel() override { stopTimer(); setLookAndFeel(nullptr); }
     std::function<void()> sizeChanged;
     void resized() override {
         sizeChoice.setBounds(750,12,180,26); selector.setBounds(530,52,210,32); reset.setBounds(756,52,174,32);
+        guitarEnabled.setBounds(44,112,190,25);
+        roomSelector.setBounds(1006,171,284,28);
+        roomEnabled.setBounds(1006,210,284,32);
+        for(int i=0;i<6;++i) roomKnobs[i].setBounds(988+(i%2)*160,294+(i/2)*116,150,108);
         original.setBounds(726,648,204,32);
         for(int i=0;i<10;++i) knobs[static_cast<size_t>(i)].setBounds(44+(i%5)*180,292+(i/5)*175,172,140);
     }
@@ -200,6 +307,19 @@ public:
         for(float x:{30.f,950.f}) for(float y:{122.f,686.f}) {
             g.setColour(juce::Colour(0xff111a15)); g.fillEllipse(x-4,y-4,8,8);
             g.setColour(muted); g.drawLine(x-2,y+1,x+2,y-1,1);
+        }
+        // A separate warm wood-coloured chassis identifies the post-guitar stage.
+        g.setGradientFill(juce::ColourGradient(juce::Colour(0xff503e30),980,108,juce::Colour(0xff2e2923),1324,700,false));
+        g.fillRoundedRectangle(980,108,344,592,16);
+        g.setColour(gold.withAlpha(.4f)); g.drawRoundedRectangle({981.f,109.f,342.f,590.f},15,1);
+        g.setColour(gold); g.setFont(juce::FontOptions(25.f));
+        g.drawText("ROOM",1000,125,304,40,juce::Justification::centred);
+        g.setColour(cream.withAlpha(.65f)); g.setFont(juce::FontOptions(10.f));
+        g.drawText("03 / AFTER GUITARSIM",1000,247,304,18,juce::Justification::centred);
+        g.drawText("Airwindows / Chris Johnson",1000,653,304,20,juce::Justification::centred);
+        for(int i=0;i<(shownRoom==0?6:3);++i) {
+            g.setColour(gold); g.setFont(juce::FontOptions(11.f));
+            g.drawText(juce::String(shownRoom==0?controls::roomNames[i]:controls::boxNames[i]).toUpperCase(),988+(i%2)*160,278+(i/2)*116,150,22,juce::Justification::centred);
         }
         // Woven speaker cloth, a small illuminated model badge, and stereo sample-peak meters.
         const juce::Rectangle<float> cloth{44,137,456,116};
@@ -226,6 +346,31 @@ public:
         g.drawText("MONO + STEREO  /  FLOAT + DOUBLE",650,708,298,20,juce::Justification::right);
     }
 private:
+    void bindRoom() {
+        const int model=processor.selectedRoom(); if(model==shownRoom) return;
+        for(auto& a:roomAttachments) a.reset(); shownRoom=model;
+        for(int i=0;i<6;++i) {
+            auto& knob=roomKnobs[i]; const bool visible=i<(model==0?6:3); knob.setVisible(visible);
+            if(!visible) continue;
+            const auto id=model==0?controls::roomId(i):controls::boxId(i);
+            const auto name=juce::String(model==0?controls::roomNames[i]:controls::boxNames[i]);
+            knob.setName(name); knob.setComponentID(id);
+            knob.setTooltip(name+". Original Airwindows range 0-1. Double-click to reset.");
+            roomAttachments[i]=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,id,knob);
+            knob.setDoubleClickReturnValue(true,model==0?controls::roomDefaults[i]:controls::boxDefaults[i]);
+        }
+        repaint();
+    }
+    void refreshStages() {
+        const bool guitarOn=processor.state.getRawParameterValue("guitarEnabled")->load()>.5f;
+        const bool roomOn=processor.state.getRawParameterValue("roomEnabled")->load()>.5f;
+        for(auto& knob:knobs) { knob.setEnabled(guitarOn); knob.setAlpha(guitarOn?1.f:.35f); }
+        for(auto& knob:roomKnobs) { knob.setEnabled(roomOn); knob.setAlpha(roomOn?1.f:.35f); }
+        selector.setEnabled(guitarOn); selector.setAlpha(guitarOn?1.f:.4f); reset.setEnabled(guitarOn);
+        roomSelector.setEnabled(roomOn); roomSelector.setAlpha(roomOn?1.f:.4f);
+        guitarEnabled.setButtonText(guitarOn?"GUITAR ON":"GUITAR BYPASSED");
+        roomEnabled.setButtonText(roomOn?"ROOM ON":"ROOM BYPASSED");
+    }
     void drawMeter(juce::Graphics& g,int x,int y,float db,const juce::String& label) {
         g.setColour(style::cream); g.setFont(juce::FontOptions(12.f)); g.drawText(label,x,y,20,20,juce::Justification::left);
         for(int i=0;i<40;++i) {
@@ -251,6 +396,7 @@ private:
     }
     void timerCallback() override {
         bindModel(processor.selectedModel());
+        bindRoom(); refreshStages();
         original.setButtonText(original.getToggleState()?"A: ORIGINAL INPUT":"B: GUITARSIM");
         if(sizeChoice.getSelectedId()!=processor.uiSize.load()) {
             sizeChoice.setSelectedId(processor.uiSize.load(),juce::dontSendNotification); if(sizeChanged) sizeChanged();
@@ -265,6 +411,14 @@ private:
     }
     GuitarProcessor& processor;
     style::Look look;
+    juce::TextButton roomEnabled{"ROOM BYPASSED"},guitarEnabled{"GUITAR ON"};
+    juce::ComboBox roomSelector;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> roomSelectorAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> guitarAttachment;
+    int shownRoom=-1;
+    std::array<juce::Slider,6> roomKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>,6> roomAttachments;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> roomAttachment;
     std::array<juce::Slider,10> knobs;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>,10> attachments;
     juce::ComboBox selector,sizeChoice;
@@ -285,8 +439,8 @@ public:
 private:
     void applySize() {
         const float scale=processor.uiSize.load()==1?.75f:processor.uiSize.load()==3?1.25f:1.f;
-        panel.setTransform(juce::AffineTransform::scale(scale)); panel.setBounds(0,0,980,740);
-        setSize(juce::roundToInt(980*scale),juce::roundToInt(740*scale));
+        panel.setTransform(juce::AffineTransform::scale(scale)); panel.setBounds(0,0,1340,740);
+        setSize(juce::roundToInt(1340*scale),juce::roundToInt(740*scale));
     }
     GuitarProcessor& processor;
     GuitarPanel panel;

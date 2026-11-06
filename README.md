@@ -6,6 +6,22 @@ A JUCE VST3 interface for **ChimeyGuitar2**, **ChimeyGuitar**, and **ChimeyDelux
 
 ![GuitarSim — ChimeyGuitar2](docs/ui-ChimeyGuitar2.png)
 
+The separate **Room** section on the right adds Airwindows room processing
+**after the selected guitar algorithm**. Choose **kWoodRoom** (the default) or
+**WoodenBox**, with independent saved parameter banks. WoodenBox exposes its original
+Select, Reso and Depth controls, each defaulting to 0.5. Use **ROOM ON/BYPASSED** to engage or bypass
+it with a 10 ms crossfade. It defaults to off, including when opening older
+sessions. kWoodRoom’s six original normalized controls (Regen, Derez, Filter, EarlyRF,
+Positin, Dry/Wet) and defaults are preserved; double-click resets each control.
+The **GUITAR ON/BYPASSED** button independently bypasses the first stage,
+allowing room-only processing. Bypassed stages have dimmed, disabled controls and
+selectors; their engage buttons remain available. Both stages retain their settings.
+Room settings are shared across guitar models and saved with the session.
+The model reset button leaves room settings unchanged. A/B compares the original
+input with the complete guitar-plus-room chain, and meters show the final output.
+
+[WoodenBox preview](docs/ui-WoodenBox.png) · [Both stages bypassed](docs/ui-bypassed.png)
+
 ## Controls
 
 - **Algorithm:** choose ChimeyGuitar, ChimeyGuitar2, or ChimeyDeluxe. Switching resets the entering engine's audio history to avoid carrying old filter/compressor state into a new audition.
