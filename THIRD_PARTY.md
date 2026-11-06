@@ -12,7 +12,8 @@ The three corresponding directories contain unmodified upstream `.h`, `.cpp`, an
 
 ## ToTape Studio UI design
 
-The rotary LookAndFeel in `Source/Look.h` is adapted from Johan Doornenbal's MIT-licensed ToTape Studio, commit `e88e2df9cd7006e28d73eaec9ff4171b6068c7dc`:
+The rotary LookAndFeel in `Source/Look.h`, needle display in `Source/OutputMeter.h`
+and damping in `Source/MeterBallistics.h` are adapted from Johan Doornenbal's MIT-licensed ToTape Studio, commit `e88e2df9cd7006e28d73eaec9ff4171b6068c7dc`:
 https://github.com/johandoornenbal/tape
 
 Copyright (c) 2026 Johan Doornenbal. The MIT permission and warranty notice is reproduced in this repository's LICENSE.

@@ -9,6 +9,8 @@
 #include "../Source/Controls.h"
 #include "../Source/kWoodRoomEngine.h"
 #include "../Source/WoodenBoxEngine.h"
+#include "../Source/OutputMeter.h"
+#include "../Source/MeterBallistics.h"
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter();
 static void require(bool condition,const char* message) { if(!condition) throw std::runtime_error(message); }
 static juce::RangedAudioParameter& param(juce::AudioProcessor& p,const juce::String& id) {
@@ -56,9 +58,36 @@ template<class Engine, class T> void compare(juce::AudioProcessor& p,int model,c
     }
     require(p.getLatencySamples()==0,"Unexpected latency"); p.releaseResources();
 }
+void checkMeterDamping() {
+    MeterBallistics meter;
+    require(meter.advance(1.f,1.0/60)<-40.f,"Needle jumps immediately on a peak");
+    for(int i=0;i<90;++i) meter.advance(.5f,1.0/60);
+    require(std::abs(meter.getLevelDb()+6.0206f)<.05f,"Steady-level meter calibration changed");
+    const auto before=meter.getLevelDb();
+    meter.advance(0,1.0/60);
+    require(meter.getLevelDb()<before && meter.getLevelDb()>before-3.f,"Needle release is abrupt");
+    for(int i=0;i<360;++i) meter.advance(0,1.0/60);
+    require(meter.getLevelDb()<=-60.f,"Stopped meter does not return to rest");
+    // Equal elapsed time must give the same response despite UI timer jitter.
+    MeterBallistics regular,jittered;
+    for(int i=0;i<60;++i) regular.advance(.5f,1.0/60);
+    for(int i=0;i<20;++i) { jittered.advance(.5f,.01); jittered.advance(.5f,.04); }
+    require(std::abs(regular.getLevelDb()-jittered.getLevelDb())<1.e-4f,"Damping depends on timer cadence");
+    // Alternating peaks should produce much less needle swing than their raw 12 dB range.
+    MeterBallistics fluctuating;
+    fluctuating.resetPeak(.5f);
+    float low=0,high=-60;
+    for(int i=0;i<240;++i) {
+        auto db=fluctuating.advance(i%2==0?.25f:1.f,1.0/60);
+        if(i>120) { low=std::min(low,db); high=std::max(high,db); }
+    }
+    require(high-low<2.f,"Rapid peaks are not averaged enough");
+}
+
 int main(int argc,char** argv) {
     juce::ScopedJuceInitialiser_GUI init;
     try {
+        checkMeterDamping();
         std::unique_ptr<juce::AudioProcessor> p(createPluginFilter());
         require(p->getName()=="GuitarSim","Plugin name");
         require(p->getParameters().size()==44,"Unexpected parameters (no level matching)");
@@ -133,7 +162,34 @@ int main(int argc,char** argv) {
         require(std::isfinite(mono.getSample(0,256)),"Mono processing");
         p->releaseResources();
         // Exercise attachment rebinding, model-specific reset, UI scaling and render the actual editor.
+        // Publish real output peaks before opening the editor so its first frame
+        // displays the final chain's stereo output, including in saved previews.
+        std::array<float,10> previewBank{};
+        for(int i=0;i<10;++i) {
+            previewBank[i]=param(*restored,controls::id(1,i)).getValue();
+            set(*restored,controls::id(1,i),controls::defaults[1][i]);
+        }
+        restored->setPlayConfigDetails(2,2,48000,512); restored->prepareToPlay(48000,512);
+        float measuredL=0,measuredR=0;
+        for(int block=0;block<12;++block) {
+            juce::AudioBuffer<float> signal(2,512);
+            for(int i=0;i<512;++i) {
+                signal.setSample(0,i,.18f*std::sin(static_cast<float>(block*512+i)*.071f));
+                signal.setSample(1,i,.08f*std::sin(static_cast<float>(block*512+i)*.053f));
+            }
+            restored->processBlock(signal,midi);
+            measuredL=std::max(measuredL,signal.getMagnitude(0,0,512)); measuredR=std::max(measuredR,signal.getMagnitude(1,0,512));
+        }
+        for(int i=0;i<10;++i) set(*restored,controls::id(1,i),previewBank[i]);
         std::unique_ptr<juce::AudioProcessorEditor> editor(restored->createEditor());
+        auto* meterLeft=dynamic_cast<OutputMeter*>(find(*editor,"outputLeft"));
+        auto* meterRight=dynamic_cast<OutputMeter*>(find(*editor,"outputRight"));
+        require(meterLeft && meterRight,"Stereo needle meters missing");
+        require(measuredL>.001f && measuredR>.001f,"Meter test needs audible stereo output");
+        require(std::abs(meterLeft->getLevelDb()-juce::Decibels::gainToDecibels(measuredL))<1.e-4f,"Left meter not final output peak");
+        require(std::abs(meterRight->getLevelDb()-juce::Decibels::gainToDecibels(measuredR))<1.e-4f,"Right meter not final output peak");
+        require(editor->getChildComponent(0)->getLocalBounds().contains(meterLeft->getBounds()),"Left meter outside panel");
+        require(!meterLeft->getBounds().intersects(meterRight->getBounds()),"Needle meters overlap");
         require(editor->getWidth()==1340 && editor->getHeight()==740,"Default editor size");
         auto* roomSwitch=dynamic_cast<juce::Button*>(find(*editor,"roomEnabled")); require(roomSwitch,"Room switch");
         require(roomSwitch->getToggleState(),"Room switch attachment");

@@ -6,6 +6,8 @@
 #include "kWoodRoomEngine.h"
 #include "WoodenBoxEngine.h"
 #include <atomic>
+#include "OutputMeter.h"
+#include "MeterBallistics.h"
 
 class GuitarProcessor final : public juce::AudioProcessor {
 public:
@@ -47,6 +49,8 @@ public:
     int selectedModel() const { return juce::jlimit(0,2,juce::roundToInt(modelValue->load())); }
     int selectedRoom() const { return roomModelValue->load()>.5f?1:0; }
     void prepareToPlay(double rate,int blockSize) override {
+        meterTimeoutSeconds.store(juce::jmax(.15,2.0*blockSize/rate),std::memory_order_relaxed);
+        meterSequence.fetch_add(1,std::memory_order_release);
         scratchSize=juce::jmax(8192,blockSize);
         floatScratch.setSize(6,scratchSize); doubleScratch.setSize(6,scratchSize);
         box.reset(rate); activeRoom=selectedRoom();
@@ -57,7 +61,7 @@ public:
         activeModel=selectedModel(); blend.reset(rate,.01);
         blend.setCurrentAndTargetValue(originalValue->load()>.5f?0.:1.); peaks[0]=0; peaks[1]=0;
     }
-    void releaseResources() override { peaks[0]=0; peaks[1]=0; }
+    void releaseResources() override { peaks[0]=0; peaks[1]=0; meterSequence.fetch_add(1,std::memory_order_release); }
     bool isBusesLayoutSupported(const BusesLayout& b) const override {
         const auto channels=b.getMainInputChannelSet();
         return (channels==juce::AudioChannelSet::mono() || channels==juce::AudioChannelSet::stereo()) && channels==b.getMainOutputChannelSet();
@@ -125,6 +129,7 @@ public:
             auto old=peaks[c].load(std::memory_order_relaxed);
             while(old<peak && !peaks[c].compare_exchange_weak(old,peak,std::memory_order_relaxed)) {}
         }
+        meterSequence.fetch_add(1,std::memory_order_release);
     }
     template<class T> void process(juce::AudioBuffer<T>& b) {
         juce::ScopedNoDenormals guard;
@@ -190,6 +195,8 @@ public:
     juce::AudioProcessorValueTreeState state;
     std::atomic<int> uiSize{2};
     std::atomic<float> peaks[2]{};
+    std::atomic<uint32_t> meterSequence{0};
+    std::atomic<double> meterTimeoutSeconds{.15};
 private:
     WoodenBoxEngine box;
     int activeRoom=0;
@@ -220,6 +227,15 @@ class GuitarPanel final : public juce::Component, private juce::Timer {
 public:
     explicit GuitarPanel(GuitarProcessor& p) : processor(p) {
         setLookAndFeel(&look);
+        addAndMakeVisible(leftMeter); addAndMakeVisible(rightMeter);
+        leftMeter.setComponentID("outputLeft"); rightMeter.setComponentID("outputRight");
+        lastMeterSequence=processor.meterSequence.load(std::memory_order_acquire);
+        for(size_t c=0;c<2;++c) {
+            targets[c]=processor.peaks[c].exchange(0,std::memory_order_relaxed);
+            ballistics[c].resetPeak(targets[c]);
+        }
+        leftMeter.setLevelDb(ballistics[0].getLevelDb()); rightMeter.setLevelDb(ballistics[1].getLevelDb());
+        lastMeterTime=juce::Time::getMillisecondCounterHiRes();
         for(auto& knob:knobs) {
             addAndMakeVisible(knob);
             knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -282,18 +298,19 @@ public:
         guitarEnabled.onClick=[this] { refreshStages(); };
         roomEnabled.onClick=[this] { refreshStages(); };
         bindModel(processor.selectedModel()); bindRoom(); refreshStages();
-        setSize(1340,740); startTimerHz(30);
+        setSize(1340,740); startTimerHz(60);
     }
     ~GuitarPanel() override { stopTimer(); setLookAndFeel(nullptr); }
     std::function<void()> sizeChanged;
     void resized() override {
         sizeChoice.setBounds(750,12,180,26); selector.setBounds(530,52,210,32); reset.setBounds(756,52,174,32);
-        guitarEnabled.setBounds(44,112,190,25);
+        guitarEnabled.setBounds(423,251,132,28);
+        leftMeter.setBounds(44,126,365,182); rightMeter.setBounds(567,126,365,182);
         roomSelector.setBounds(1006,171,284,28);
         roomEnabled.setBounds(1006,210,284,32);
         for(int i=0;i<6;++i) roomKnobs[i].setBounds(988+(i%2)*160,294+(i/2)*116,150,108);
         original.setBounds(726,648,204,32);
-        for(int i=0;i<10;++i) knobs[static_cast<size_t>(i)].setBounds(44+(i%5)*180,292+(i/5)*175,172,140);
+        for(int i=0;i<10;++i) knobs[static_cast<size_t>(i)].setBounds(44+(i%5)*180,336+(i/5)*155,172,130);
     }
     void paint(juce::Graphics& g) override {
         using namespace style;
@@ -321,23 +338,20 @@ public:
             g.setColour(gold); g.setFont(juce::FontOptions(11.f));
             g.drawText(juce::String(shownRoom==0?controls::roomNames[i]:controls::boxNames[i]).toUpperCase(),988+(i%2)*160,278+(i/2)*116,150,22,juce::Justification::centred);
         }
-        // Woven speaker cloth, a small illuminated model badge, and stereo sample-peak meters.
-        const juce::Rectangle<float> cloth{44,137,456,116};
+        // Tape-style stereo needles flank the speaker-cloth model badge.
+        const juce::Rectangle<float> cloth{421,137,136,102};
         g.setColour(juce::Colour(0xff17201a)); g.fillRoundedRectangle(cloth,8);
         g.setColour(cream.withAlpha(.055f));
-        for(int x=48;x<498;x+=5) g.drawVerticalLine(x,141,249);
-        for(int y=141;y<250;y+=5) g.drawHorizontalLine(y,48,496);
-        g.setColour(ink); g.fillRoundedRectangle(123,158,296,74,5);
-        g.setColour(gold); g.drawRoundedRectangle({124.f,159.f,294.f,72.f},4,1);
-        g.setFont(juce::FontOptions(25.f)); g.drawText(controls::models[shownModel],128,165,286,34,juce::Justification::centred);
-        g.setFont(juce::FontOptions(10.f)); g.setColour(cream.withAlpha(.6f));
-        g.drawText(shownModel==2?"THE DELUXE CIRCUIT":"THE CHIME CIRCUIT",128,202,286,18,juce::Justification::centred);
-        for(int c=0;c<2;++c) drawMeter(g,544,151+c*48,level[c],c==0?"L":"R");
-        g.setColour(muted); g.setFont(juce::FontOptions(10.f));
-        g.drawText("OUTPUT  /  SAMPLE PEAK  /  dBFS",543,231,383,18,juce::Justification::right);
-        g.setColour(cream.withAlpha(.12f)); g.drawHorizontalLine(270,48,932); g.drawHorizontalLine(445,138,842); g.drawHorizontalLine(632,48,932);
+        for(int x=425;x<555;x+=5) g.drawVerticalLine(x,141,235);
+        for(int y=141;y<236;y+=5) g.drawHorizontalLine(y,425,553);
+        g.setColour(ink); g.fillRoundedRectangle(427,155,124,66,5);
+        g.setColour(gold); g.drawRoundedRectangle({428.f,156.f,122.f,64.f},4,1);
+        g.setFont(juce::FontOptions(14.f)); g.drawText(controls::models[shownModel],430,164,118,30,juce::Justification::centred);
+        g.setFont(juce::FontOptions(8.f)); g.setColour(cream.withAlpha(.6f));
+        g.drawText(shownModel==2?"DELUXE CIRCUIT":"CHIME CIRCUIT",430,199,118,16,juce::Justification::centred);
+        g.setColour(cream.withAlpha(.12f)); g.drawHorizontalLine(314,48,932); g.drawHorizontalLine(470,138,842); g.drawHorizontalLine(632,48,932);
         g.setColour(gold); g.setFont(juce::FontOptions(11.f));
-        for(int i=0;i<10;++i) g.drawText(juce::String(controls::name(shownModel,i)).toUpperCase(),44+(i%5)*180,276+(i/5)*175,172,22,juce::Justification::centred);
+        for(int i=0;i<10;++i) g.drawText(juce::String(controls::name(shownModel,i)).toUpperCase(),44+(i%5)*180,320+(i/5)*155,172,22,juce::Justification::centred);
         g.setColour(cream.withAlpha(.6f)); g.setFont(juce::FontOptions(11.f));
         g.drawText("01 / DYNAMICS & TONE",48,652,380,20,juce::Justification::left);
         g.drawText("02 / BODY & SPEAKER",300,652,380,20,juce::Justification::left);
@@ -371,16 +385,6 @@ private:
         guitarEnabled.setButtonText(guitarOn?"GUITAR ON":"GUITAR BYPASSED");
         roomEnabled.setButtonText(roomOn?"ROOM ON":"ROOM BYPASSED");
     }
-    void drawMeter(juce::Graphics& g,int x,int y,float db,const juce::String& label) {
-        g.setColour(style::cream); g.setFont(juce::FontOptions(12.f)); g.drawText(label,x,y,20,20,juce::Justification::left);
-        for(int i=0;i<40;++i) {
-            const auto threshold=-60.f+static_cast<float>(i)*1.65f;
-            const auto colour=threshold>=0?juce::Colour(0xffdf715b):threshold>=-9?style::gold:juce::Colour(0xffb8c99a);
-            g.setColour(colour.withAlpha(db>-60.f && db>=threshold?1.f:.12f)); g.fillRoundedRectangle(static_cast<float>(x+24+i*7),static_cast<float>(y+2),5,16,1);
-        }
-        g.setColour(db>=0?juce::Colour(0xffdf715b):style::cream);
-        g.drawText(db<=-60?"-inf":juce::String(db,1),x+310,y,70,20,juce::Justification::right);
-    }
     void bindModel(int model) {
         if(model==shownModel) return;
         for(auto& a:attachments) a.reset();
@@ -402,12 +406,18 @@ private:
             sizeChoice.setSelectedId(processor.uiSize.load(),juce::dontSendNotification); if(sizeChanged) sizeChanged();
         }
         const auto now=juce::Time::getMillisecondCounterHiRes();
-        const auto elapsed=lastTime>0?(now-lastTime)*.001:1./30.; lastTime=now;
-        for(int c=0;c<2;++c) {
-            const auto target=juce::Decibels::gainToDecibels(processor.peaks[c].exchange(0),-60.f);
-            level[c]=juce::jmax(target,level[c]-static_cast<float>(elapsed*24.));
+        const auto elapsed=(now-lastMeterTime)*.001;
+        lastMeterTime=now;
+        const auto sequence=processor.meterSequence.load(std::memory_order_acquire);
+        if(sequence!=lastMeterSequence) {
+            lastMeterSequence=sequence; idleSeconds=0;
+            for(size_t c=0;c<2;++c) targets[c]=processor.peaks[c].exchange(0,std::memory_order_relaxed);
+        } else {
+            idleSeconds+=elapsed;
+            if(idleSeconds>processor.meterTimeoutSeconds.load(std::memory_order_relaxed)) targets.fill(0);
         }
-        repaint(540,140,390,110);
+        for(size_t c=0;c<2;++c) ballistics[c].advance(targets[c],elapsed);
+        leftMeter.setLevelDb(ballistics[0].getLevelDb()); rightMeter.setLevelDb(ballistics[1].getLevelDb());
     }
     GuitarProcessor& processor;
     style::Look look;
@@ -427,8 +437,11 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> originalAttachment;
     juce::TooltipWindow tooltip{this,600};
     int shownModel=-1;
-    float level[2]{-60,-60};
-    double lastTime=0;
+    OutputMeter leftMeter{"LEFT"},rightMeter{"RIGHT"};
+    std::array<MeterBallistics,2> ballistics;
+    std::array<float,2> targets{};
+    uint32_t lastMeterSequence=0;
+    double lastMeterTime=0,idleSeconds=0;
 };
 
 class GuitarEditor final : public juce::AudioProcessorEditor {

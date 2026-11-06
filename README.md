@@ -28,7 +28,7 @@ input with the complete guitar-plus-room chain, and meters show the final output
 - **Rotary controls:** drag or type a value from 0 to 1; double-click to restore that control's original default. Each model exposes its actual Airwindows parameters.
 - **Reset this model:** restores only the selected algorithm's controls. Other algorithms retain their settings.
 - **A: Original input / B: GuitarSim:** compare dry and processed audio with a 10 ms crossfade. This does not match their loudness. The engines continue running while listening to Original.
-- **Output meters:** stereo sample peaks, with red segments at and above 0 dBFS. The display decays when playback stops. No limiter is applied.
+- **Output meters:** illuminated stereo needle meters styled like ToTape Studio. They display final output sample peaks in dBFS with the same 120 ms attack and 450 ms release damping as Tape. The needles return to rest when playback stops; the numerical readouts show levels above 0 dBFS. These are sample-peak displays, not calibrated VU meters. No limiter is applied.
 - **Interface size:** 75%, 100%, or 125%, saved with the session.
 
 ChimeyGuitar and ChimeyGuitar2 expose Compression, Presence, High, Mid, Low, Sub, High Speaker, Low Speaker, Speed, and Output. ChimeyDeluxe exposes Hell, Fizz, Pick, Satan, Danger, Critical, High Meat, Low Meat, Swing, and Rarely. Values use the upstream normalized scale; the UI does not invent dB or frequency units for these nonlinear controls.
