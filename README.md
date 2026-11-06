@@ -2,7 +2,7 @@
 
 A JUCE VST3 interface for **ChimeyGuitar2**, **ChimeyGuitar**, and **ChimeyDeluxe** by [Airwindows](https://github.com/airwindows/airwindows). Built in the visual family of [ToTape Studio](https://github.com/johandoornenbal/tape) and [Wide](https://github.com/johandoornenbal/wide): cream faceplate, dark green chassis, gold rotary controls, and a speaker-cloth model badge.
 
-**GuitarSim** is the name shown in your DAW. ChimeyGuitar2 is selected by default. Every algorithm keeps its own ten controls and original Airwindows defaults when you switch models and save your DAW session. There is no LUFS compensation, automatic gain adjustment, or level-learning system.
+**GuitaRizm** is the interface name; **GuitarSim** remains the VST plugin name shown in your DAW. ChimeyGuitar2 is selected by default. Every algorithm keeps its own ten controls and original Airwindows defaults when you switch models and save your DAW session. There is no LUFS compensation, automatic gain adjustment, or level-learning system.
 
 ![GuitarSim — ChimeyGuitar2](docs/ui-ChimeyGuitar2.png)
 
@@ -20,14 +20,14 @@ Room settings are shared across guitar models and saved with the session.
 The model reset button leaves room settings unchanged. A/B compares the original
 input with the complete guitar-plus-room chain, and meters show the final output.
 
-[WoodenBox preview](docs/ui-WoodenBox.png) · [Both stages bypassed](docs/ui-bypassed.png)
+[WoodenBox preview](docs/ui-WoodenBox.png) · [Both stages bypassed](docs/ui-bypassed.png) · [Global A/B: original input](docs/ui-original.png)
 
 ## Controls
 
-- **Algorithm:** choose ChimeyGuitar, ChimeyGuitar2, or ChimeyDeluxe. Switching resets the entering engine's audio history to avoid carrying old filter/compressor state into a new audition.
+- **Algorithm (between the needle meters):** choose ChimeyGuitar, ChimeyGuitar2, or ChimeyDeluxe. Switching resets the entering engine's audio history to avoid carrying old filter/compressor state into a new audition.
 - **Rotary controls:** drag or type a value from 0 to 1; double-click to restore that control's original default. Each model exposes its actual Airwindows parameters.
-- **Reset this model:** restores only the selected algorithm's controls. Other algorithms retain their settings.
-- **A: Original input / B: GuitarSim:** compare dry and processed audio with a 10 ms crossfade. This does not match their loudness. The engines continue running while listening to Original.
+- **Reset this model (inside the guitar section):** restores only the selected algorithm's controls. Other algorithms retain their settings.
+- **Global A/B (above both sections):** A listens to the original input, bypassing both Guitar and Room. Both sections dim and show “A/B BYPASS” while listening to A; their saved engage settings are retained. B listens to the complete GuitaRizm chain with whichever stages you have enabled, using a 10 ms crossfade. This does not match their loudness. The engines continue running while listening to Original.
 - **Output meters:** illuminated stereo needle meters styled like ToTape Studio. They display final output sample peaks in dBFS with the same 120 ms attack and 450 ms release damping as Tape. The needles return to rest when playback stops; the numerical readouts show levels above 0 dBFS. These are sample-peak displays, not calibrated VU meters. No limiter is applied.
 - **Interface size:** 75%, 100%, or 125%, saved with the session.
 

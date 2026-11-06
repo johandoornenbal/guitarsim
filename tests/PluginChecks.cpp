@@ -232,6 +232,15 @@ int main(int argc,char** argv) {
         roomChoice->setSelectedId(1,juce::sendNotificationSync);
         require(std::abs(param(*restored,"kWoodRoom_0").getValue()-.432f)<1.e-6f,"Room bank lost on switch");
         require(std::abs(param(*restored,"WoodenBox_0").getValue()-.654f)<1.e-6f,"Box bank lost on switch");
+        auto* globalAB=dynamic_cast<juce::Button*>(find(*editor,"abOriginal")); require(globalAB,"Global comparison button");
+        require(globalAB->getButtonText().contains("GuitaRizm"),"UI comparison name");
+        globalAB->setToggleState(true,juce::sendNotificationSync);
+        require(globalAB->getButtonText().contains("Guitar + Room bypassed"),"Global bypass scope unclear");
+        require(!find(*editor,"ChimeyDeluxe_0")->isEnabled() && !find(*editor,"kWoodRoom_0")->isEnabled(),"Original comparison did not dim both sections");
+        require(param(*restored,"guitarEnabled").getValue()==1.f && param(*restored,"roomEnabled").getValue()==1.f,"A/B changed saved engage settings");
+        snapshot("ui-original");
+        globalAB->setToggleState(false,juce::sendNotificationSync);
+        require(find(*editor,"ChimeyDeluxe_0")->isEnabled() && find(*editor,"kWoodRoom_0")->isEnabled(),"Processed comparison did not restore controls");
         auto* guitarSwitch=dynamic_cast<juce::Button*>(find(*editor,"guitarEnabled")); require(guitarSwitch,"Guitar switch");
         guitarSwitch->setToggleState(false,juce::sendNotificationSync);
         roomSwitch->setToggleState(false,juce::sendNotificationSync);

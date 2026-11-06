@@ -293,8 +293,14 @@ public:
             }
         };
         original.setComponentID("abOriginal"); original.setClickingTogglesState(true);
-        original.setTooltip("Compare the unprocessed input with GuitarSim. Uses a 10 ms crossfade.");
+        original.setTooltip("Global A/B: A is the original input, bypassing BOTH Guitar and Room. B is the complete GuitaRizm chain with your selected stages. Uses a 10 ms crossfade.");
         originalAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"original",original);
+        addAndMakeVisible(comparisonStatus);
+        comparisonStatus.setComponentID("comparisonStatus");
+        comparisonStatus.setJustificationType(juce::Justification::centred);
+        comparisonStatus.setFont(juce::FontOptions(12.f));
+        comparisonStatus.setColour(juce::Label::textColourId,style::ink);
+        original.onClick=[this] { refreshStages(); };
         guitarEnabled.onClick=[this] { refreshStages(); };
         roomEnabled.onClick=[this] { refreshStages(); };
         bindModel(processor.selectedModel()); bindRoom(); refreshStages();
@@ -303,20 +309,22 @@ public:
     ~GuitarPanel() override { stopTimer(); setLookAndFeel(nullptr); }
     std::function<void()> sizeChanged;
     void resized() override {
-        sizeChoice.setBounds(750,12,180,26); selector.setBounds(530,52,210,32); reset.setBounds(756,52,174,32);
-        guitarEnabled.setBounds(423,251,132,28);
-        leftMeter.setBounds(44,126,365,182); rightMeter.setBounds(567,126,365,182);
+        sizeChoice.setBounds(750,12,180,26);
+        selector.setBounds(399,183,180,32); reset.setBounds(399,223,180,28);
+        comparisonStatus.setBounds(530,48,400,40);
+        guitarEnabled.setBounds(399,263,180,28);
+        leftMeter.setBounds(44,126,332,182); rightMeter.setBounds(600,126,332,182);
         roomSelector.setBounds(1006,171,284,28);
         roomEnabled.setBounds(1006,210,284,32);
         for(int i=0;i<6;++i) roomKnobs[i].setBounds(988+(i%2)*160,294+(i/2)*116,150,108);
-        original.setBounds(726,648,204,32);
+        original.setBounds(980,48,344,34);
         for(int i=0;i<10;++i) knobs[static_cast<size_t>(i)].setBounds(44+(i%5)*180,336+(i/5)*155,172,130);
     }
     void paint(juce::Graphics& g) override {
         using namespace style;
         g.fillAll(cream); g.setColour(ink); g.setFont(juce::FontOptions(11.f));
         g.drawText("YODO AUDIO    /    AIRWINDOWS DSP",32,14,600,20,juce::Justification::left);
-        g.setFont(juce::FontOptions(40.f)); g.drawText("GuitarSim",30,40,300,55,juce::Justification::left);
+        g.setFont(juce::FontOptions(40.f)); g.drawText("GuitaRizm",30,40,300,55,juce::Justification::left);
         g.setFont(juce::FontOptions(12.f)); g.drawText("C H I M E   /   S T U D I O",305,65,220,20,juce::Justification::left);
         g.setGradientFill(juce::ColourGradient(juce::Colour(0xff343d36),0,108,juce::Colour(0xff19221d),0,700,false));
         g.fillRoundedRectangle(16,108,948,592,16);
@@ -332,23 +340,22 @@ public:
         g.setColour(gold); g.setFont(juce::FontOptions(25.f));
         g.drawText("ROOM",1000,125,304,40,juce::Justification::centred);
         g.setColour(cream.withAlpha(.65f)); g.setFont(juce::FontOptions(10.f));
-        g.drawText("03 / AFTER GUITARSIM",1000,247,304,18,juce::Justification::centred);
+        g.drawText("03 / AFTER GUITAR",1000,247,304,18,juce::Justification::centred);
         g.drawText("Airwindows / Chris Johnson",1000,653,304,20,juce::Justification::centred);
         for(int i=0;i<(shownRoom==0?6:3);++i) {
             g.setColour(gold); g.setFont(juce::FontOptions(11.f));
             g.drawText(juce::String(shownRoom==0?controls::roomNames[i]:controls::boxNames[i]).toUpperCase(),988+(i%2)*160,278+(i/2)*116,150,22,juce::Justification::centred);
         }
-        // Tape-style stereo needles flank the speaker-cloth model badge.
-        const juce::Rectangle<float> cloth{421,137,136,102};
+        g.setColour(ink); g.setFont(juce::FontOptions(11.f));
+        g.drawText("GLOBAL A/B  /  GUITAR + ROOM",980,18,344,20,juce::Justification::centred);
+        // Guitar selection and reset live between the two output meters.
+        const juce::Rectangle<float> cloth{389,137,200,162};
         g.setColour(juce::Colour(0xff17201a)); g.fillRoundedRectangle(cloth,8);
         g.setColour(cream.withAlpha(.055f));
-        for(int x=425;x<555;x+=5) g.drawVerticalLine(x,141,235);
-        for(int y=141;y<236;y+=5) g.drawHorizontalLine(y,425,553);
-        g.setColour(ink); g.fillRoundedRectangle(427,155,124,66,5);
-        g.setColour(gold); g.drawRoundedRectangle({428.f,156.f,122.f,64.f},4,1);
-        g.setFont(juce::FontOptions(14.f)); g.drawText(controls::models[shownModel],430,164,118,30,juce::Justification::centred);
-        g.setFont(juce::FontOptions(8.f)); g.setColour(cream.withAlpha(.6f));
-        g.drawText(shownModel==2?"DELUXE CIRCUIT":"CHIME CIRCUIT",430,199,118,16,juce::Justification::centred);
+        for(int x=393;x<587;x+=5) g.drawVerticalLine(x,141,295);
+        for(int y=141;y<296;y+=5) g.drawHorizontalLine(y,393,585);
+        g.setColour(gold); g.setFont(juce::FontOptions(13.f));
+        g.drawText("GUITAR",399,143,180,24,juce::Justification::centred);
         g.setColour(cream.withAlpha(.12f)); g.drawHorizontalLine(314,48,932); g.drawHorizontalLine(470,138,842); g.drawHorizontalLine(632,48,932);
         g.setColour(gold); g.setFont(juce::FontOptions(11.f));
         for(int i=0;i<10;++i) g.drawText(juce::String(controls::name(shownModel,i)).toUpperCase(),44+(i%5)*180,320+(i/5)*155,172,22,juce::Justification::centred);
@@ -356,7 +363,7 @@ public:
         g.drawText("01 / DYNAMICS & TONE",48,652,380,20,juce::Justification::left);
         g.drawText("02 / BODY & SPEAKER",300,652,380,20,juce::Justification::left);
         g.setColour(ink.withAlpha(.65f));
-        g.drawText("GuitarSim  /  "+juce::String(controls::models[shownModel])+" by Airwindows",32,708,650,20,juce::Justification::left);
+        g.drawText("GuitaRizm  /  "+juce::String(controls::models[shownModel])+" by Airwindows",32,708,650,20,juce::Justification::left);
         g.drawText("MONO + STEREO  /  FLOAT + DOUBLE",650,708,298,20,juce::Justification::right);
     }
 private:
@@ -376,14 +383,17 @@ private:
         repaint();
     }
     void refreshStages() {
+        const bool originalOn=processor.state.getRawParameterValue("original")->load()>.5f;
         const bool guitarOn=processor.state.getRawParameterValue("guitarEnabled")->load()>.5f;
         const bool roomOn=processor.state.getRawParameterValue("roomEnabled")->load()>.5f;
-        for(auto& knob:knobs) { knob.setEnabled(guitarOn); knob.setAlpha(guitarOn?1.f:.35f); }
-        for(auto& knob:roomKnobs) { knob.setEnabled(roomOn); knob.setAlpha(roomOn?1.f:.35f); }
-        selector.setEnabled(guitarOn); selector.setAlpha(guitarOn?1.f:.4f); reset.setEnabled(guitarOn);
-        roomSelector.setEnabled(roomOn); roomSelector.setAlpha(roomOn?1.f:.4f);
-        guitarEnabled.setButtonText(guitarOn?"GUITAR ON":"GUITAR BYPASSED");
-        roomEnabled.setButtonText(roomOn?"ROOM ON":"ROOM BYPASSED");
+        for(auto& knob:knobs) { knob.setEnabled(guitarOn && !originalOn); knob.setAlpha(guitarOn && !originalOn?1.f:.35f); }
+        for(auto& knob:roomKnobs) { knob.setEnabled(roomOn && !originalOn); knob.setAlpha(roomOn && !originalOn?1.f:.35f); }
+        selector.setEnabled(guitarOn && !originalOn); selector.setAlpha(guitarOn && !originalOn?1.f:.4f); reset.setEnabled(guitarOn && !originalOn);
+        roomSelector.setEnabled(roomOn && !originalOn); roomSelector.setAlpha(roomOn && !originalOn?1.f:.4f);
+        guitarEnabled.setButtonText(originalOn?"GUITAR: A/B BYPASS":guitarOn?"GUITAR ON":"GUITAR BYPASSED");
+        roomEnabled.setButtonText(originalOn?"ROOM: A/B BYPASS":roomOn?"ROOM ON":"ROOM BYPASSED");
+        original.setButtonText(originalOn?"A: Original | Guitar + Room bypassed":"B: GuitaRizm | Processed");
+        comparisonStatus.setText(originalOn?"Original input | Both stages bypassed":"Processed output | Enabled stages in series",juce::dontSendNotification);
     }
     void bindModel(int model) {
         if(model==shownModel) return;
@@ -401,7 +411,6 @@ private:
     void timerCallback() override {
         bindModel(processor.selectedModel());
         bindRoom(); refreshStages();
-        original.setButtonText(original.getToggleState()?"A: ORIGINAL INPUT":"B: GUITARSIM");
         if(sizeChoice.getSelectedId()!=processor.uiSize.load()) {
             sizeChoice.setSelectedId(processor.uiSize.load(),juce::dontSendNotification); if(sizeChanged) sizeChanged();
         }
@@ -431,8 +440,9 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> roomAttachment;
     std::array<juce::Slider,10> knobs;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>,10> attachments;
+    juce::Label comparisonStatus;
     juce::ComboBox selector,sizeChoice;
-    juce::TextButton reset{"RESET THIS MODEL"},original{"B: GUITARSIM"};
+    juce::TextButton reset{"RESET THIS MODEL"},original{"B: GuitaRizm | Processed"};
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> selectorAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> originalAttachment;
     juce::TooltipWindow tooltip{this,600};
