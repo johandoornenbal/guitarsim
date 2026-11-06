@@ -1,0 +1,41 @@
+name: Build GuitarSim
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libx11-dev libxext-dev libxinerama-dev libxrandr-dev libxcursor-dev libfreetype6-dev libfontconfig1-dev libgl1-mesa-dev xvfb
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build --config Release --parallel 2
+      - name: Test Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a ctest --test-dir build -C Release --output-on-failure
+      - name: Test Windows and macOS
+        if: runner.os != 'Linux'
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Render interface previews
+        if: runner.os == 'Linux'
+        run: xvfb-run -a build/plugin_checks "$PWD/build/previews"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GuitarSim-${{ runner.os }}
+          path: build/GuitarSim_artefacts/Release/VST3/
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: GuitarSim-UI-previews
+          path: build/previews/*.png
