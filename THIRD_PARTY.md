@@ -40,3 +40,13 @@ JUCE is fetched at build time and is not relicensed by this repository's MIT lic
 Both effect engines run as an independent second stage after the selected guitar
 engine. The bypass fades and original-input comparison are applied by the plugin
 wrapper, outside all Airwindows algorithms.
+
+## Airwindows PunchyDeluxe2
+
+Chris Johnson / Airwindows, MIT. The three upstream source files are preserved
+verbatim in `third_party/airwindows/PunchyDeluxe2`, retrieved November 16, 2026:
+https://github.com/airwindows/airwindows/tree/143a86df3642881e0be4bf827815050721063b41/plugins/WinVST/PunchyDeluxe2
+
+The same reproducible SDK-free adapter preserves all processing expressions,
+state initialization and ten defaults, with the established deterministic seeds.
+Exact float/double reference tests match those seeds in the test harness only.

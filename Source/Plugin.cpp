@@ -2,6 +2,7 @@
 #include "ChimeyGuitarEngine.h"
 #include "ChimeyGuitar2Engine.h"
 #include "ChimeyDeluxeEngine.h"
+#include "PunchyDeluxe2Engine.h"
 #include "Controls.h"
 #include "kWoodRoomEngine.h"
 #include "WoodenBoxEngine.h"
@@ -13,7 +14,7 @@ class GuitarProcessor final : public juce::AudioProcessor {
 public:
     GuitarProcessor() : AudioProcessor(BusesProperties().withInput("Input",juce::AudioChannelSet::stereo(),true)
         .withOutput("Output",juce::AudioChannelSet::stereo(),true)), state(*this,nullptr,"GuitarSimState",layout()) {
-        for(int m=0;m<3;++m) for(int i=0;i<10;++i) values[m][i]=state.getRawParameterValue(controls::id(m,i));
+        for(int m=0;m<4;++m) for(int i=0;i<10;++i) values[m][i]=state.getRawParameterValue(controls::id(m,i));
         for(int i=0;i<6;++i) roomValues[i]=state.getRawParameterValue(controls::roomId(i));
         for(int i=0;i<3;++i) boxValues[i]=state.getRawParameterValue(controls::boxId(i));
         roomModelValue=state.getRawParameterValue("roomModel");
@@ -31,7 +32,7 @@ public:
                 juce::String(controls::models[m])+" "+controls::name(m,i),juce::NormalisableRange<float>(0,1),controls::defaults[m][i],attr));
         }
         p.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"model",1},"Algorithm",
-            juce::StringArray{"ChimeyGuitar","ChimeyGuitar2","ChimeyDeluxe"},1));
+            juce::StringArray{"ChimeyGuitar","ChimeyGuitar2","ChimeyDeluxe","PunchyDeluxe2"},1));
         p.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"original",1},"Original input",false));
         const auto roomAttributes=juce::AudioParameterFloatAttributes()
             .withStringFromValueFunction([](float v,int) { return juce::String(v,3); })
@@ -44,9 +45,18 @@ public:
         for(int i=0;i<3;++i) p.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{controls::boxId(i),1},
             "WoodenBox "+juce::String(controls::boxNames[i]),juce::NormalisableRange<float>(0,1),controls::boxDefaults[i],roomAttributes));
         p.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"guitarEnabled",1},"Guitar enabled",true));
+        // Append new controls so existing host parameter indices stay stable.
+        for(int i=0;i<10;++i) {
+            constexpr int m=3;
+            auto attr=juce::AudioParameterFloatAttributes()
+                .withStringFromValueFunction([](float v,int) { return juce::String(v,3); })
+                .withValueFromStringFunction([](const juce::String& s) { return s.getFloatValue(); });
+            p.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{controls::id(m,i),1},
+                juce::String(controls::models[m])+" "+controls::name(m,i),juce::NormalisableRange<float>(0,1),controls::defaults[m][i],attr));
+        }
         return p;
     }
-    int selectedModel() const { return juce::jlimit(0,2,juce::roundToInt(modelValue->load())); }
+    int selectedModel() const { return juce::jlimit(0,3,juce::roundToInt(modelValue->load())); }
     int selectedRoom() const { return roomModelValue->load()>.5f?1:0; }
     void prepareToPlay(double rate,int blockSize) override {
         meterTimeoutSeconds.store(juce::jmax(.15,2.0*blockSize/rate),std::memory_order_relaxed);
@@ -57,7 +67,7 @@ public:
         guitarBlend.reset(rate,.01); guitarBlend.setCurrentAndTargetValue(guitarEnabledValue->load()>.5f?1.:0.);
         room.reset(rate); roomBlend.reset(rate,.01);
         roomBlend.setCurrentAndTargetValue(roomEnabledValue->load()>.5f?1.:0.);
-        sampleRate=rate; guitar.reset(rate); guitar2.reset(rate); deluxe.reset(rate);
+        sampleRate=rate; guitar.reset(rate); guitar2.reset(rate); deluxe.reset(rate); punchy.reset(rate);
         activeModel=selectedModel(); blend.reset(rate,.01);
         blend.setCurrentAndTargetValue(originalValue->load()>.5f?0.:1.); peaks[0]=0; peaks[1]=0;
     }
@@ -140,10 +150,10 @@ public:
         }
         const int model=selectedModel();
         if(model!=activeModel) {
-            if(model==0) guitar.reset(sampleRate); else if(model==1) guitar2.reset(sampleRate); else deluxe.reset(sampleRate);
+            if(model==0) guitar.reset(sampleRate); else if(model==1) guitar2.reset(sampleRate); else if(model==2) deluxe.reset(sampleRate); else punchy.reset(sampleRate);
             activeModel=model;
         }
-        if(model==0) render(guitar,b,model); else if(model==1) render(guitar2,b,model); else render(deluxe,b,model);
+        if(model==0) render(guitar,b,model); else if(model==1) render(guitar2,b,model); else if(model==2) render(deluxe,b,model); else render(punchy,b,model);
         meter(b);
     }
     void processBlock(juce::AudioBuffer<float>& b,juce::MidiBuffer&) override { process(b); }
@@ -189,6 +199,14 @@ public:
                     restored.appendChild(parameter,nullptr);
                 }
             }
+            for(int i=0;i<10;++i) {
+                const auto id=controls::id(3,i);
+                if(!restored.getChildWithProperty("id",id).isValid()) {
+                    juce::ValueTree parameter{"PARAM"}; parameter.setProperty("id",id,nullptr);
+                    parameter.setProperty("value",controls::defaults[3][i],nullptr);
+                    restored.appendChild(parameter,nullptr);
+                }
+            }
             state.replaceState(restored);
         }
     }
@@ -206,7 +224,8 @@ private:
     ChimeyGuitarEngine guitar;
     ChimeyGuitar2Engine guitar2;
     ChimeyDeluxeEngine deluxe;
-    std::array<std::array<std::atomic<float>*,10>,3> values{};
+    PunchyDeluxe2Engine punchy;
+    std::array<std::array<std::atomic<float>*,10>,4> values{};
     std::array<std::atomic<float>*,6> roomValues{};
     std::array<std::atomic<float>*,3> boxValues{};
     std::atomic<float>* roomModelValue=nullptr;
@@ -259,7 +278,7 @@ public:
         roomEnabled.setTooltip("Engage the selected room algorithm after the selected guitar algorithm. Uses a 10 ms crossfade.");
         roomAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"roomEnabled",roomEnabled);
         selector.setName("Algorithm"); selector.setComponentID("algorithm");
-        selector.addItemList({"ChimeyGuitar","ChimeyGuitar2","ChimeyDeluxe"},1);
+        selector.addItemList({"ChimeyGuitar","ChimeyGuitar2","ChimeyDeluxe","PunchyDeluxe2"},1);
         selector.setTooltip("Each Airwindows algorithm keeps its own settings. Switching resets the entering algorithm's audio history.");
         sizeChoice.addItemList({"Small (75%)","Medium (100%)","Large (125%)"},1);
         sizeChoice.setName("Interface size"); sizeChoice.setComponentID("uiSize");

@@ -1,6 +1,6 @@
 # GuitarSim
 
-A JUCE VST3 interface for **ChimeyGuitar2**, **ChimeyGuitar**, and **ChimeyDeluxe** by [Airwindows](https://github.com/airwindows/airwindows). Built in the visual family of [ToTape Studio](https://github.com/johandoornenbal/tape) and [Wide](https://github.com/johandoornenbal/wide): cream faceplate, dark green chassis, gold rotary controls, and a speaker-cloth model badge.
+A JUCE VST3 interface for **ChimeyGuitar2**, **ChimeyGuitar**, **ChimeyDeluxe**, and **PunchyDeluxe2** by [Airwindows](https://github.com/airwindows/airwindows). Built in the visual family of [ToTape Studio](https://github.com/johandoornenbal/tape) and [Wide](https://github.com/johandoornenbal/wide): cream faceplate, dark green chassis, gold rotary controls, and a speaker-cloth model badge.
 
 **GuitaRizm** is the interface name; **GuitarSim** remains the VST plugin name shown in your DAW. ChimeyGuitar2 is selected by default. Every algorithm keeps its own ten controls and original Airwindows defaults when you switch models and save your DAW session. There is no LUFS compensation, automatic gain adjustment, or level-learning system.
 
@@ -24,7 +24,7 @@ input with the complete guitar-plus-room chain, and meters show the final output
 
 ## Controls
 
-- **Algorithm (between the needle meters):** choose ChimeyGuitar, ChimeyGuitar2, or ChimeyDeluxe. Switching resets the entering engine's audio history to avoid carrying old filter/compressor state into a new audition.
+- **Algorithm (between the needle meters):** choose ChimeyGuitar, ChimeyGuitar2, ChimeyDeluxe, or PunchyDeluxe2. Switching resets the entering engine's audio history to avoid carrying old filter/compressor state into a new audition.
 - **Rotary controls:** drag or type a value from 0 to 1; double-click to restore that control's original default. Each model exposes its actual Airwindows parameters.
 - **Reset this model (inside the guitar section):** restores only the selected algorithm's controls. Other algorithms retain their settings.
 - **Global A/B (above both sections):** A listens to the original input, bypassing both Guitar and Room. Both sections dim and show “A/B BYPASS” while listening to A; their saved engage settings are retained. B listens to the complete GuitaRizm chain with whichever stages you have enabled, using a 10 ms crossfade. This does not match their loudness. The engines continue running while listening to Original.
@@ -78,7 +78,7 @@ sudo apt-get install libasound2-dev libx11-dev libxext-dev libxinerama-dev libxr
 xvfb-run -a ctest --test-dir build --output-on-failure
 ```
 
-The plugin is written to `build/GuitarSim_artefacts/Release/VST3/GuitarSim.vst3`. CI builds and tests on macOS Apple Silicon, and renders the actual JUCE editor for all three algorithms into the `GuitarSim-UI-previews` artifact.
+The plugin is written to `build/GuitarSim_artefacts/Release/VST3/GuitarSim.vst3`. CI builds and tests on macOS Apple Silicon, and renders the actual JUCE editor for all four guitar algorithms into the `GuitarSim-UI-previews` artifact.
 
 For the DSP tests without JUCE or GUI dependencies:
 
@@ -95,3 +95,27 @@ The DSP tests compare the ports against the unmodified upstream implementations 
 Airwindows DSP is MIT licensed. Unmodified reference sources and their license are under `third_party/airwindows`; the SDK-free DSP ports are under `Source`. Run `python3 scripts/port-engines.py` to reproduce the ports. DSP processing is unchanged; ports use deterministic dither seeds, omit the VST2 interface, and add bounds/finite checks to the parameter setter. Scratch audio buffers are allocated in `prepareToPlay`, not on the audio thread. Host blocks up to the greater of the announced maximum and 8192 samples preserve upstream block boundaries; oversized blocks are processed in bounded chunks.
 
 GuitarSim is an independent interface, not an official Airwindows release. See [THIRD_PARTY.md](THIRD_PARTY.md) for provenance and JUCE licensing.
+
+## PunchyDeluxe2
+
+Select **PunchyDeluxe2** in the Guitar menu. Its ten original controls are Top,
+Fizz, Pick, Satan, Danger, Crtical, H Meat, L Meat, Swing and Bottom, each with
+its native 0–1 range and 0.5 default. Each control supports automation, reset
+and session recall. The selected room stage follows it as usual.
+
+The Airwindows DSP is unchanged. Original upstream sources are vendored verbatim;
+the engine is reproduced by `scripts/port-engines.py` using the existing adapter.
+Reference checks cover both precisions, 44.1–192 kHz, silence, high-level input,
+parameter changes and varied block sizes with exactly matching output.
+Existing parameter IDs, parameter ordering and saved model indices are retained;
+old sessions initialize the new control bank to its native defaults.
+As with any extended choice parameter, host automation stored as normalized values
+for the Algorithm selector may need reselecting because its choice count increased.
+
+![PunchyDeluxe2 editor](docs/ui-PunchyDeluxe2.png)
+
+Validation for this addition: Linux Release VST3 build and all three CTest suites
+passed, including 48 exact float/double PunchyDeluxe2 reference cases and wrapper
+routing with both room engines. The actual editor rendered successfully with its
+new control bank. Native macOS signing and DAW playback were not run in this Linux
+workspace.

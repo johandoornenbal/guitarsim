@@ -3,7 +3,7 @@
 from pathlib import Path
 import re
 root = Path(__file__).resolve().parents[1]
-for name in ('ChimeyGuitar', 'ChimeyGuitar2', 'ChimeyDeluxe', 'kWoodRoom', 'WoodenBox'):
+for name in ('PunchyDeluxe2', 'ChimeyGuitar', 'ChimeyGuitar2', 'ChimeyDeluxe', 'kWoodRoom', 'WoodenBox'):
     src = root / 'third_party' / 'airwindows' / name
     header = (src / f'{name}.h').read_text()
     state = header.split('private:')[1].split('float A;')[1].split('};\n\n#endif')[0]

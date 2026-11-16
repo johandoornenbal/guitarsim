@@ -6,6 +6,7 @@
 #include "../Source/ChimeyGuitarEngine.h"
 #include "../Source/ChimeyGuitar2Engine.h"
 #include "../Source/ChimeyDeluxeEngine.h"
+#include "../Source/PunchyDeluxe2Engine.h"
 #include "../Source/Controls.h"
 #include "../Source/kWoodRoomEngine.h"
 #include "../Source/WoodenBoxEngine.h"
@@ -26,7 +27,7 @@ static juce::Component* find(juce::Component& c,const juce::String& id) {
 template<class Engine, class T> void compare(juce::AudioProcessor& p,int model,const juce::String& name,bool withRoom=false,int roomModel=0,bool guitarOn=true) {
     set(p,"guitarEnabled",guitarOn?1.f:0.f); set(p,"roomModel",static_cast<float>(roomModel));
     set(p,"roomEnabled",withRoom?1.f:0.f);
-    set(p,"model",static_cast<float>(model)*.5f); set(p,"original",0.f);
+    set(p,"model",static_cast<float>(model)/3.f); set(p,"original",0.f);
     p.setProcessingPrecision(std::is_same_v<T,float>?juce::AudioProcessor::singlePrecision:juce::AudioProcessor::doublePrecision);
     p.setPlayConfigDetails(2,2,48000,257); p.prepareToPlay(48000,257);
     Engine e; e.reset(48000);
@@ -90,11 +91,11 @@ int main(int argc,char** argv) {
         checkMeterDamping();
         std::unique_ptr<juce::AudioProcessor> p(createPluginFilter());
         require(p->getName()=="GuitarSim","Plugin name");
-        require(p->getParameters().size()==44,"Unexpected parameters (no level matching)");
+        require(p->getParameters().size()==54,"Unexpected parameters (no level matching)");
         require(param(*p,"guitarEnabled").getValue()==1.f,"Guitar default bypassed");
         require(param(*p,"roomModel").getValue()==0.f,"kWoodRoom not default");
         require(param(*p,"roomEnabled").getValue()==0.f,"Room default engaged");
-        require(param(*p,"model").getValue()==.5f,"ChimeyGuitar2 is not default");
+        require(param(*p,"model").getValue()==1.f/3.f,"ChimeyGuitar2 is not default");
         require(std::abs(param(*p,"ChimeyGuitar2_0").getValue()-.6f)<1.e-6f,"Upstream default");
         compare<ChimeyGuitarEngine,float>(*p,0,"ChimeyGuitar");
         compare<ChimeyGuitar2Engine,float>(*p,1,"ChimeyGuitar2");
@@ -114,11 +115,17 @@ int main(int argc,char** argv) {
         compare<ChimeyGuitar2Engine,float>(*p,1,"ChimeyGuitar2",true,0,false);
         compare<ChimeyGuitar2Engine,double>(*p,1,"ChimeyGuitar2",true,1,false);
         compare<ChimeyGuitar2Engine,float>(*p,1,"ChimeyGuitar2",false,0,false);
+        compare<PunchyDeluxe2Engine,float>(*p,3,"PunchyDeluxe2");
+        compare<PunchyDeluxe2Engine,float>(*p,3,"PunchyDeluxe2",true);
+        compare<PunchyDeluxe2Engine,float>(*p,3,"PunchyDeluxe2",true,1);
+        compare<PunchyDeluxe2Engine,double>(*p,3,"PunchyDeluxe2");
+        compare<PunchyDeluxe2Engine,double>(*p,3,"PunchyDeluxe2",true);
+        compare<PunchyDeluxe2Engine,double>(*p,3,"PunchyDeluxe2",true,1);
         set(*p,"guitarEnabled",1.f); set(*p,"roomEnabled",1.f); set(*p,"roomModel",0.f);
         p->setProcessingPrecision(juce::AudioProcessor::singlePrecision);
         p->setPlayConfigDetails(2,2,48000,512); p->prepareToPlay(48000,512);
         juce::MidiBuffer midi;
-        for(float model:{0.f,.5f,1.f}) {
+        for(float model:{0.f,1.f/3.f,2.f/3.f,1.f}) {
             set(*p,"model",model);
             juce::AudioBuffer<float> b(2,512);
             for(int c=0;c<2;++c) for(int i=0;i<512;++i) b.setSample(c,i,.1f*std::sin(static_cast<float>(i)*.071f));
@@ -128,23 +135,25 @@ int main(int argc,char** argv) {
             for(int i=0;i<512;++i) require(std::isfinite(d.getSample(0,i)),"Double output nonfinite");
         }
         set(*p,"ChimeyGuitar_0",.123f); set(*p,"ChimeyGuitar2_0",.789f); set(*p,"ChimeyDeluxe_0",.456f);
-        set(*p,"model",.5f); set(*p,"kWoodRoom_0",.321f);
+        set(*p,"model",1.f/3.f); set(*p,"kWoodRoom_0",.321f); set(*p,"PunchyDeluxe2_0",.234f);
         juce::MemoryBlock state; p->getStateInformation(state);
         std::unique_ptr<juce::AudioProcessor> restored(createPluginFilter()); restored->setStateInformation(state.getData(),static_cast<int>(state.getSize()));
         require(std::abs(param(*restored,"ChimeyGuitar_0").getValue()-.123f)<1.e-6f,"Original bank lost");
         require(std::abs(param(*restored,"ChimeyGuitar2_0").getValue()-.789f)<1.e-6f,"Guitar2 bank lost");
         require(std::abs(param(*restored,"ChimeyDeluxe_0").getValue()-.456f)<1.e-6f,"Deluxe bank lost");
-        require(param(*restored,"model").getValue()==.5f,"Selected model lost");
+        require(param(*restored,"model").getValue()==1.f/3.f,"Selected model lost");
         require(param(*restored,"roomEnabled").getValue()==1.f,"Room enable lost");
         require(std::abs(param(*restored,"kWoodRoom_0").getValue()-.321f)<1.e-6f,"Room controls lost");
+        require(std::abs(param(*restored,"PunchyDeluxe2_0").getValue()-.234f)<1.e-6f,"Punchy bank lost");
         auto legacyXml=juce::AudioProcessor::getXmlFromBinary(state.getData(),static_cast<int>(state.getSize()));
         for(int i=legacyXml->getNumChildElements()-1;i>=0;--i) {
             auto* child=legacyXml->getChildElement(i);
             const auto id=child->getStringAttribute("id");
-            if(id=="roomEnabled" || id=="roomModel" || id=="guitarEnabled" || id.startsWith("kWoodRoom_") || id.startsWith("WoodenBox_")) legacyXml->removeChildElement(child,true);
+            if(id.startsWith("PunchyDeluxe2_") || id=="roomEnabled" || id=="roomModel" || id=="guitarEnabled" || id.startsWith("kWoodRoom_") || id.startsWith("WoodenBox_")) legacyXml->removeChildElement(child,true);
         }
         juce::MemoryBlock legacy; juce::AudioProcessor::copyXmlToBinary(*legacyXml,legacy);
         restored->setStateInformation(legacy.getData(),static_cast<int>(legacy.getSize()));
+        require(param(*restored,"PunchyDeluxe2_0").getValue()==.5f,"Legacy Punchy default");
         require(param(*restored,"roomEnabled").getValue()==0.f,"Legacy session enabled room");
         require(param(*restored,"guitarEnabled").getValue()==1.f,"Legacy guitar bypassed");
         require(param(*restored,"roomModel").getValue()==0.f,"Legacy room choice");
@@ -197,9 +206,9 @@ int main(int argc,char** argv) {
         roomKnob->setValue(.432,juce::sendNotificationSync);
         require(std::abs(param(*restored,"kWoodRoom_0").getValue()-.432f)<1.e-6f,"Room knob attachment");
         auto* selector=dynamic_cast<juce::ComboBox*>(find(*editor,"algorithm")); require(selector,"Model selector");
-        const juce::StringArray names{"ChimeyGuitar","ChimeyGuitar2","ChimeyDeluxe"};
+        const juce::StringArray names{"ChimeyGuitar","ChimeyGuitar2","ChimeyDeluxe","PunchyDeluxe2"};
         juce::File output(argc>1?juce::String(argv[1]):juce::File::getCurrentWorkingDirectory().getFullPathName()); output.createDirectory();
-        for(int model=0;model<3;++model) {
+        for(int model=0;model<4;++model) {
             selector->setSelectedId(model+1,juce::sendNotificationSync);
             require(find(*editor,names[model]+"_0"),"Control bank not rebound");
             if(argc>1) {
@@ -212,7 +221,14 @@ int main(int argc,char** argv) {
                 for(int i=0;i<10;++i) set(*restored,controls::id(model,i),saved[static_cast<size_t>(i)]);
             }
         }
+        selector->setSelectedId(4,juce::sendNotificationSync);
+        auto* punchyKnob=dynamic_cast<juce::Slider*>(find(*editor,"PunchyDeluxe2_0")); require(punchyKnob,"Punchy control missing");
+        punchyKnob->setValue(.91,juce::sendNotificationSync);
+        require(std::abs(param(*restored,"PunchyDeluxe2_0").getValue()-.91f)<1.e-6f,"Punchy control binding");
         auto* reset=dynamic_cast<juce::Button*>(find(*editor,"resetParameters")); require(reset,"Reset button");
+        if(reset->onClick) reset->onClick();
+        require(param(*restored,"PunchyDeluxe2_0").getValue()==.5f,"Punchy reset");
+        selector->setSelectedId(3,juce::sendNotificationSync);
         if(reset->onClick) reset->onClick();
         require(std::abs(param(*restored,"kWoodRoom_0").getValue()-.432f)<1.e-6f,"Model reset changed room");
         require(std::abs(param(*restored,"ChimeyDeluxe_0").getValue()-.5f)<1.e-6f,"Reset selected bank");

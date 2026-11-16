@@ -6,3 +6,5 @@ void referenceChimeyDeluxe(double rate, const float* params, double** data, int 
 void referencekWoodRoom(double rate, const float* params, double** data, int samples, int blockSize);
 
 void referenceWoodenBox(double rate, const float* params, double** data, int samples, int blockSize);
+
+void referencePunchyDeluxe2(double rate, const float* params, double** data, int samples, int blockSize);
